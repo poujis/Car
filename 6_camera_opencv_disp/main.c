@@ -1,7 +1,3 @@
-/*******************************************************************************
- *  INCLUDE FILES
- *******************************************************************************
- */
 #include <signal.h>
 #include <pthread.h>
 #include <sys/ipc.h>
@@ -10,8 +6,9 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <syslog.h>
-#include "car_lib.h"
+
 #include "util.h"
+
 #include "display-kms.h"
 #include "v4l2.h"
 #include "vpe-common.h"
@@ -19,17 +16,6 @@
 #include "input_cmd.h"
 #include "exam_cv.h"
 
-/*******************************************************************************
- *  Defines
- *******************************************************************************
- */
-#define LIGHT_BEEP       // to test light and beep
-#define POSITION_CONTROL  // to test postion control
-#define SPEED_CONTROL     // to test speed control
-#define SERVO_CONTROL     // to test servo control(steering & camera position)
-#define LINE_TRACE              // to test line trace sensor
-#define DISTANCE_SENSOR     // to test distance sensor
-/*sensor define*/
 
 #define CAPTURE_IMG_W       1280
 #define CAPTURE_IMG_H       720
@@ -61,14 +47,12 @@
 #define DUMP_MSGQ_KEY           1020
 #define DUMP_MSGQ_MSG_TYPE      0x02
 
-
 typedef enum {
     DUMP_NONE,
     DUMP_CMD,
     DUMP_READY,
     DUMP_WRITE_TO_FILE,
-    DUMP_DONE,
-    START
+    DUMP_DONE
 }DumpState;
 
 typedef struct _DumpMsg{
@@ -90,11 +74,7 @@ struct thr_data {
     bool bstream_start;
     pthread_t threads[3];
 };
-int flag=0;
-/*******************************************************************************
- *  Functions
- *******************************************************************************
- */
+
 /**
   * @brief  Alloc vpe input buffer and a new buffer object
   * @param  data: pointer to parameter of thr_data
@@ -194,55 +174,6 @@ static void hough_transform(struct display *disp, struct buffer *cambuf)
     }
 }
 
-static void object_detect(struct display *disp, struct buffer *cambuf)
-{
-    unsigned char srcbuf[VPE_OUTPUT_W*VPE_OUTPUT_H*3];
-    uint32_t optime;
-    struct timeval st, et;
-
-    unsigned char* cam_pbuf[4];
-    if(get_framebuf(cambuf, cam_pbuf) == 0) {
-        memcpy(srcbuf, cam_pbuf[0], VPE_OUTPUT_W*VPE_OUTPUT_H*3);
-
-        gettimeofday(&st, NULL);
-
-        OpenCV_hough_transform(srcbuf, VPE_OUTPUT_W, VPE_OUTPUT_H, cam_pbuf[0], VPE_OUTPUT_W, VPE_OUTPUT_H);
-
-        gettimeofday(&et, NULL);
-        optime = ((et.tv_sec - st.tv_sec)*1000)+ ((int)et.tv_usec/1000 - (int)st.tv_usec/1000);
-        draw_operatingtime(disp, optime);
-}
-}
-/**
-@brief Car control, position, servo, speed, light and beep
-@param arg: pointer to parameter of thr_data
-@retval none
-*/
-void *control_thread(void *arg){
-    struct thr_data *data = (struct thr_data *)arg;
-    struct v4l2 *v4l2 = data->v4l2;
-    struct vpe *vpe = data->vpe;
-    struct buffer *capt;
-    bool isFirst = true;
-
-     DumpMsg dumpmsg;
-     
-     while(1){
-       // printf("check thread2\n");
-        if(dumpmsg.state_msg == DUMP_READY){
-            dumpmsg.state_msg=DUMP_READY;
-            dumpmsg.type = DUMP_MSGQ_MSG_TYPE;
-            
-            //MSG("state:%d, msg send fail\n", dumpmsg.state_msg);
-            flag++;
-            
-            data->dump_state = DUMP_NONE;
-            sleep(2);
-        }
-    }
-    // DesiredSpeed_Write(0);
-  
-}
 /**
   * @brief  Camera capture, capture image covert by VPE and display after sobel edge
   * @param  arg: pointer to parameter of thr_data
@@ -287,7 +218,7 @@ void * capture_thread(void *arg)
     vpe_stream_on(vpe->fd, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
 
     vpe->field = V4L2_FIELD_ANY;
-    //printf("ceeeeeeeeeeeeeeeeeeeeeeeee");
+
     while(1) {
         index = v4l2_dqbuf(v4l2, &vpe->field);
         vpe_input_qbuf(vpe, index);
@@ -298,68 +229,47 @@ void * capture_thread(void *arg)
             MSG("streaming started...");
             data->bstream_start = true;
         }
-        //printf("object detect ready\n");
+
         index = vpe_output_dqbuf(vpe);
         capt = vpe->disp_bufs[index];
 
         hough_transform(vpe->disp, capt);
-	//object_detect(vpe->disp,capt);	
-	   ///////////////////////////////////
-        //printf("dddddddddddddddddddddddd\n");
-        //printf("flag 1: %d \n",flag);
-        if(data->dump_state == DUMP_NONE){
-        //if(1){
-            DumpMsg dumpmsg;
-            //printf("11111111111111111111111\n");
-            if(flag==0)
-            {
-                //printf("test : flag 0\n");
-                object_detect(vpe->disp,capt);
-                dumpmsg.type = DUMP_MSGQ_MSG_TYPE;
-                dumpmsg.state_msg=DUMP_READY;
-                data->dump_state = DUMP_READY; 
-            }
-            else if(flag==1){
-                //printf("test : flag1\n");
-                flag=0;
-            }
-        }
-        /////////////////////////////////////
+
         if (disp_post_vid_buffer(vpe->disp, capt, 0, 0, vpe->dst.width, vpe->dst.height)) {
             ERROR("Post buffer failed");
             return NULL;
         }
         update_overlay_disp(vpe->disp); 
 
-        // if(data->dump_state == DUMP_READY) {
-        //     DumpMsg dumpmsg;
-        //     unsigned char* pbuf[4];
+        if(data->dump_state == DUMP_READY) {
+            DumpMsg dumpmsg;
+            unsigned char* pbuf[4];
 
-        //     if(get_framebuf(capt, pbuf) == 0) {
-        //         switch(capt->fourcc) {
-        //             case FOURCC('Y','U','Y','V'):
-        //             case FOURCC('B','G','R','3'):
-        //                 memcpy(data->dump_img_data, pbuf[0], VPE_OUTPUT_IMG_SIZE);
-        //                 break;
-        //             case FOURCC('N','V','1','2'):
-        //                 memcpy(data->dump_img_data, pbuf[0], VPE_OUTPUT_W*VPE_OUTPUT_H); // y data
-        //                 memcpy(data->dump_img_data+VPE_OUTPUT_W*VPE_OUTPUT_H, pbuf[1], VPE_OUTPUT_W*VPE_OUTPUT_H/2); // uv data
-        //                 break;
-        //             default :
-        //                 MSG("DUMP.. not yet support format : %.4s\n", (char*)&capt->fourcc);
-        //                 break;
-        //         }
-        //     } else {
-        //         MSG("dump capture buf fail !");
-        //     }
+            if(get_framebuf(capt, pbuf) == 0) {
+                switch(capt->fourcc) {
+                    case FOURCC('Y','U','Y','V'):
+                    case FOURCC('B','G','R','3'):
+                        memcpy(data->dump_img_data, pbuf[0], VPE_OUTPUT_IMG_SIZE);
+                        break;
+                    case FOURCC('N','V','1','2'):
+                        memcpy(data->dump_img_data, pbuf[0], VPE_OUTPUT_W*VPE_OUTPUT_H); // y data
+                        memcpy(data->dump_img_data+VPE_OUTPUT_W*VPE_OUTPUT_H, pbuf[1], VPE_OUTPUT_W*VPE_OUTPUT_H/2); // uv data
+                        break;
+                    default :
+                        MSG("DUMP.. not yet support format : %.4s\n", (char*)&capt->fourcc);
+                        break;
+                }
+            } else {
+                MSG("dump capture buf fail !");
+            }
 
-        //     dumpmsg.type = DUMP_MSGQ_MSG_TYPE;
-        //     dumpmsg.state_msg = DUMP_WRITE_TO_FILE;
-        //     data->dump_state = DUMP_WRITE_TO_FILE;
-        //     if (-1 == msgsnd(data->msgq_id, &dumpmsg, sizeof(DumpMsg)-sizeof(long), 0)) {
-        //         MSG("state:%d, msg send fail\n", dumpmsg.state_msg);
-        //     }
-        // }
+            dumpmsg.type = DUMP_MSGQ_MSG_TYPE;
+            dumpmsg.state_msg = DUMP_WRITE_TO_FILE;
+            data->dump_state = DUMP_WRITE_TO_FILE;
+            if (-1 == msgsnd(data->msgq_id, &dumpmsg, sizeof(DumpMsg)-sizeof(long), 0)) {
+                MSG("state:%d, msg send fail\n", dumpmsg.state_msg);
+            }
+        }
 
         vpe_output_qbuf(vpe, index);
         index = vpe_input_dqbuf(vpe);
@@ -376,96 +286,96 @@ void * capture_thread(void *arg)
   * @param  arg: pointer to parameter of thr_data
   * @retval none
   */
-// void * capture_dump_thread(void *arg)
-// {
-//     struct thr_data *data = (struct thr_data *)arg;
-//     FILE *fp;
-//     char file[50];
-//     struct timeval timestamp;
-//     struct tm *today;
-//     DumpMsg dumpmsg;
+void * capture_dump_thread(void *arg)
+{
+    struct thr_data *data = (struct thr_data *)arg;
+    FILE *fp;
+    char file[50];
+    struct timeval timestamp;
+    struct tm *today;
+    DumpMsg dumpmsg;
 
-//     while(1) {
-//         if(msgrcv(data->msgq_id, &dumpmsg, sizeof(DumpMsg)-sizeof(long), DUMP_MSGQ_MSG_TYPE, 0) >= 0) {
-//             switch(dumpmsg.state_msg) {
-//                 case DUMP_CMD :
-//                     gettimeofday(&timestamp, NULL);
-//                     today = localtime(&timestamp.tv_sec);
-//                     sprintf(file, "dump_%04d%02d%02d_%02d%02d%02d.%s", today->tm_year+1900, today->tm_mon+1, today->tm_mday, today->tm_hour, today->tm_min, today->tm_sec,VPE_OUTPUT_FORMAT);
-//                     data->dump_state = DUMP_READY;
-//                     MSG("file name:%s", file);
-//                     break;
+    while(1) {
+        if(msgrcv(data->msgq_id, &dumpmsg, sizeof(DumpMsg)-sizeof(long), DUMP_MSGQ_MSG_TYPE, 0) >= 0) {
+            switch(dumpmsg.state_msg) {
+                case DUMP_CMD :
+                    gettimeofday(&timestamp, NULL);
+                    today = localtime(&timestamp.tv_sec);
+                    sprintf(file, "dump_%04d%02d%02d_%02d%02d%02d.%s", today->tm_year+1900, today->tm_mon+1, today->tm_mday, today->tm_hour, today->tm_min, today->tm_sec,VPE_OUTPUT_FORMAT);
+                    data->dump_state = DUMP_READY;
+                    MSG("file name:%s", file);
+                    break;
 
-//                 case DUMP_WRITE_TO_FILE :
-//                     if((fp = fopen(file, "w+")) == NULL){
-//                         ERROR("Fail to fopen");
-//                     } else {
-//                         fwrite(data->dump_img_data, VPE_OUTPUT_IMG_SIZE, 1, fp);
-//                     }
-//                     fclose(fp);
-//                     data->dump_state = DUMP_DONE;
-//                     break;
+                case DUMP_WRITE_TO_FILE :
+                    if((fp = fopen(file, "w+")) == NULL){
+                        ERROR("Fail to fopen");
+                    } else {
+                        fwrite(data->dump_img_data, VPE_OUTPUT_IMG_SIZE, 1, fp);
+                    }
+                    fclose(fp);
+                    data->dump_state = DUMP_DONE;
+                    break;
 
-//                 default :
-//                     MSG("dump msg wrong (%d)", dumpmsg.state_msg);
-//                     break;
-//             }
-//         }
-//     }
+                default :
+                    MSG("dump msg wrong (%d)", dumpmsg.state_msg);
+                    break;
+            }
+        }
+    }
 
-//     return NULL;
-// }
+    return NULL;
+}
 
+/**
+  * @brief  handling an input command
+  * @param  arg: pointer to parameter of thr_data
+  * @retval none
+  */
+void * input_thread(void *arg)
+{
+    struct thr_data *data = (struct thr_data *)arg;
 
- // * @brief  handling an input command
-  //* @param  arg: pointer to parameter of thr_data
-  //* @retval none
-//   
-// void * input_thread(void *arg)
-// {
-//     struct thr_data *data = (struct thr_data *)arg;
+    char cmd_input[128];
+    char cmd_ready = true;
 
-//     char cmd_input[128];
-//     char cmd_ready = true;
+    while(!data->bstream_start) {
+        usleep(100*1000);
+    }
 
-//     while(!data->bstream_start) {
-//         usleep(100*1000);
-//     }
+    MSG("\n\nInput command:");
+    MSG("\t dump  : display image(%s, %dx%d) dump", VPE_OUTPUT_FORMAT, VPE_OUTPUT_W, VPE_OUTPUT_H);
+    MSG("\n");
 
-//     MSG("\n\nInput command:");
-//     MSG("\t dump  : display image(%s, %dx%d) dump", VPE_OUTPUT_FORMAT, VPE_OUTPUT_W, VPE_OUTPUT_H);
-//     MSG("\n");
+    while(1)
+    {
+        if(cmd_ready == true) {
+            /*standby to input command */
+            cmd_ready = StandbyInput(cmd_input);     //define in cmd.cpp
+        } else {
+            if(0 == strncmp(cmd_input,"dump",4)) {
+                DumpMsg dumpmsg;
+                dumpmsg.type = DUMP_MSGQ_MSG_TYPE;
+                dumpmsg.state_msg = DUMP_CMD;
+                data->dump_state = DUMP_CMD;
+                MSG("image dump start");
+                if (-1 == msgsnd(data->msgq_id, &dumpmsg, sizeof(DumpMsg)-sizeof(long), 0)) {
+                    printf("dump cmd msg send fail\n");
+                }
 
-//     while(1)
-//     {
-//         if(cmd_ready == true) {
-//             /*standby to input command */
-//             cmd_ready = StandbyInput(cmd_input);     //define in cmd.cpp
-//         } else {
-//             if(0 == strncmp(cmd_input,"dump",4)) {
-//                 DumpMsg dumpmsg;
-//                 dumpmsg.type = DUMP_MSGQ_MSG_TYPE;
-//                 dumpmsg.state_msg = DUMP_CMD;
-//                 data->dump_state = DUMP_CMD;
-//                 MSG("image dump start");
-//                 if (-1 == msgsnd(data->msgq_id, &dumpmsg, sizeof(DumpMsg)-sizeof(long), 0)) {
-//                     printf("dump cmd msg send fail\n");
-//                 }
+                while(data->dump_state != DUMP_DONE) {
+                    usleep(5*1000);
+                }
+                data->dump_state = DUMP_NONE;
+                MSG("image dump done");
+            } else {
+                printf("cmd_input:%s \n", cmd_input);
+            }
+            cmd_ready = true;
+        }
+    }
 
-//                 while(data->dump_state != DUMP_DONE) {
-//                     usleep(5*1000);
-//                 }
-//                 data->dump_state = DUMP_NONE;
-//                 MSG("image dump done");
-//             } else {
-//                 printf("cmd_input:%s \n", cmd_input);
-//             }
-//             cmd_ready = true;
-//         }
-//     }
-
-//     return NULL;
-// }
+    return NULL;
+}
 
 static struct thr_data* pexam_data = NULL;
 
@@ -501,29 +411,15 @@ void signal_handler(int sig)
 
 int main(int argc, char **argv)
 {
-    unsigned char status;
-    short speed;
-    unsigned char gain;
-    int position, posInit, posDes, posRead;
-    short angle;
-    int channel;
-    int data;
-    char sensor;
-    int i, j;
-    int tol;
-    char byte = 0x80;
-/* car control variable */
-
     struct v4l2 *v4l2;
     struct vpe *vpe;
     struct thr_data tdata;
     int disp_argc = 3;
-    char* disp_argv[] = {"dummy", "-s", "4:480x272", "\0"}; // 
+    char* disp_argv[] = {"dummy", "-s", "4:480x272", "\0"}; // 추후 변경 여부 확인 후 처리..
     int ret = 0;
 
     printf("-- 6_camera_opencv_disp example Start --\n");
 
-    CarControlInit(); //insert
     tdata.dump_state = DUMP_NONE;
     memset(tdata.dump_img_data, 0, sizeof(tdata.dump_img_data));
 
@@ -586,32 +482,24 @@ int main(int argc, char **argv)
     }
 
     pexam_data = &tdata;
-    printf("tes00");
+
     ret = pthread_create(&tdata.threads[0], NULL, capture_thread, &tdata);
     if(ret) {
         MSG("Failed creating capture thread");
     }
     pthread_detach(tdata.threads[0]);
-    printf("tes0001111");
-    printf("tes1");
-    ret = pthread_create(&tdata.threads[1] , NULL , control_thread, &tdata);
-    if(ret){
-        MSG("Failed creating control thread");
-    }
-    printf("tes2");
-    pthread_detach(tdata.threads[1]);
-    printf("tes3");
-    // ret = pthread_create(&tdata.threads[1], NULL, capture_dump_thread, &tdata);
-    // if(ret) {
-    //     MSG("Failed creating capture dump thread");
-    // }
-    // pthread_detach(tdata.threads[1]);
 
-    // ret = pthread_create(&tdata.threads[2], NULL, input_thread, &tdata);
-    // if(ret) {
-    //     MSG("Failed creating input thread");
-    // }
-    // pthread_detach(tdata.threads[2]);
+    ret = pthread_create(&tdata.threads[1], NULL, capture_dump_thread, &tdata);
+    if(ret) {
+        MSG("Failed creating capture dump thread");
+    }
+    pthread_detach(tdata.threads[1]);
+
+    ret = pthread_create(&tdata.threads[2], NULL, input_thread, &tdata);
+    if(ret) {
+        MSG("Failed creating input thread");
+    }
+    pthread_detach(tdata.threads[2]);
 
     /* register signal handler for <CTRL>+C in order to clean up */
     if(signal(SIGINT, signal_handler) == SIG_ERR) {

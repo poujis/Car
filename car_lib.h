@@ -59,6 +59,8 @@ signed short CameraYServoControl_Read(void);
 void CameraYServoControl_Write(signed short angle);
 unsigned char LineSensor_Read(void);
 int DistanceSensor(int channel);
+void OpenCV_object_detect(unsigned char* srcBuf, int iw, int ih, unsigned char* outBuf, int nw, int nh);
+void OpenCV_object_detect2(unsigned char* srcBuf, int iw, int ih, unsigned char* outBuf, int nw, int nh);
 
 
 #ifdef __cplusplus

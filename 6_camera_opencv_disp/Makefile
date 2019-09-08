@@ -19,15 +19,15 @@ CFLAGS := -O1 -g -Wall -fPIC -mfloat-abi=hard -mfpu=neon -Wl,-rpath,$(ROOTFS)/li
 CXXFLAGS = -Wall -ansi -g -fPIC -mfloat-abi=hard -mfpu=neon $(INC) -I$(ROOTFS)/include/c++/4.7.3/
 
 LDFLAGS = -lm -lpthread -L$(LIBDIR) -lrt -ldrm -lmtdev -ldrm_omap -lstdc++ -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_objdetect
-TARGET = chang
+TARGET = camera_opencv_disp
 
 all: $(TARGET)
 
 clean:
 	rm -f *.a *.o $(TARGET) *.lo
 
-$(TARGET): main.c car_lib.c v4l2.lo display-kms.lo util.lo vpe-common.lo input_cmd.lo drawing.lo exam_cv.lo
-	$(CC) $(CFLAGS) -o $@ main.c car_lib.c v4l2.lo display-kms.lo util.lo vpe-common.lo input_cmd.lo drawing.lo exam_cv.lo $(LDFLAGS)
+$(TARGET): main.c v4l2.lo display-kms.lo util.lo vpe-common.lo input_cmd.lo drawing.lo exam_cv.lo
+	$(CC) $(CFLAGS) -o $@ main.c v4l2.lo display-kms.lo util.lo vpe-common.lo input_cmd.lo drawing.lo exam_cv.lo $(LDFLAGS)
 
 v4l2.lo: v4l2.c v4l2.h
 	$(CC) -c $(CFLAGS) -o $@ v4l2.c
